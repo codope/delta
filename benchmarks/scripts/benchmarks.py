@@ -91,13 +91,14 @@ class TPCDSDataLoadSpec(BenchmarkSpec):
     Specifications of TPC-DS data load process.
     Always mixin in this first before the base benchmark class.
     """
-    def __init__(self, scale_in_gb, exclude_nulls=True, **kwargs):
+    def __init__(self, scale_in_gb, exclude_nulls=True, use_datasource=False, **kwargs):
         # forward all keyword args to next constructor
         super().__init__(benchmark_main_class="benchmark.TPCDSDataLoad", **kwargs)
         self.benchmark_main_class_args.extend([
             "--format", self.format_name,
             "--scale-in-gb", str(scale_in_gb),
             "--exclude-nulls", str(exclude_nulls),
+            "--use-datasource", str(use_datasource),
         ])
         # To access the public TPCDS parquet files on S3
         self.spark_confs.extend(["spark.hadoop.fs.s3.useRequesterPaysHeader=true"])
@@ -162,6 +163,49 @@ class DeltaTPCDSDataLoadSpec(TPCDSDataLoadSpec, DeltaBenchmarkSpec):
 class DeltaTPCDSBenchmarkSpec(TPCDSBenchmarkSpec, DeltaBenchmarkSpec):
     def __init__(self, delta_version, scale_in_gb=1):
         super().__init__(delta_version=delta_version, scale_in_gb=scale_in_gb)
+
+
+# ============== Hudi benchmark specifications ==============
+
+
+class HudiBenchmarkSpec(BenchmarkSpec):
+    """
+    Specification of a benchmark using the Hudi format
+    NOTE: Spark version is fixed to 3.1.2. In order to parameterize spark version, change the super class and spark-sql version in build.sbt.
+    """
+    def __init__(self, hudi_version, benchmark_main_class, main_class_args=None, scala_version="2.12", **kwargs):
+        hudi_spark_confs = [
+            "spark.serializer=org.apache.spark.serializer.KryoSerializer",
+            "spark.sql.extensions=org.apache.spark.sql.hudi.HoodieSparkSessionExtension"
+        ]
+        self.scala_version = scala_version
+
+        super().__init__(
+            format_name="hudi",
+            maven_artifacts=self.hudi_maven_artifacts(hudi_version, self.scala_version),
+            spark_confs=hudi_spark_confs,
+            benchmark_main_class=benchmark_main_class,
+            main_class_args=main_class_args,
+            **kwargs
+        )
+
+    def update_hudi_version(self, new_hudi_version):
+        self.maven_artifacts = \
+            HudiBenchmarkSpec.hudi_maven_artifacts(new_hudi_version, self.scala_version)
+
+    @staticmethod
+    def hudi_maven_artifacts(hudi_version, scala_version):
+        return f"org.apache.hudi:hudi-spark3.1-bundle_{scala_version}:{hudi_version},org.apache.spark:spark-avro_{scala_version}:3.1.2"
+
+
+class HudiTPCDSDataLoadSpec(TPCDSDataLoadSpec, HudiBenchmarkSpec):
+    def __init__(self, hudi_version, scale_in_gb=1, use_datasource=False):
+        super().__init__(hudi_version=hudi_version, scale_in_gb=scale_in_gb, use_datasource=use_datasource)
+
+
+class HudiTPCDSBenchmarkSpec(TPCDSBenchmarkSpec, HudiBenchmarkSpec):
+    def __init__(self, hudi_version, scale_in_gb=1):
+        super().__init__(hudi_version=hudi_version, scale_in_gb=scale_in_gb)
 
 
 # ============== Parquet benchmark specifications ==============
